@@ -66,5 +66,37 @@ class EEGGRU(nn.Module):
         grad_clip=1.0,
     ):
         super().__init__()
+        self.bidirectional = bidirectional
+        self.grad_clip = grad_clip
+
+        self.gru = nn.GRU(
+            input_size=chans,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0.0,
+            bidirectional=bidirectional,
+        )
+
+        out_dim = hidden_dim * 2 if bidirectional else hidden_dim
+
+        self.classifier = nn.Sequential(
+            nn.Linear(out_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, num_classes),
+        )
 
     def forward(self, x):
+        x = x.transpose(1, 2)
+        out, h_n = self.gru(x)  #只返回 h_n
+        
+        if self.bidirectional:
+            feat = torch.cat((h_n[-2], h_n[-1]), dim=1)
+        else:
+            feat = h_n[-1]
+            
+        return self.classifier(feat)
+
+    def clip_gradients(self):
+        return torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=self.grad_clip)
